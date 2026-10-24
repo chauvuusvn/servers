@@ -112,13 +112,36 @@ export function normalizePath(p: string): string {
 }
 
 /**
- * Expands home directory tildes in paths
+ * Expands home directory tildes in paths.
+ * Supports ~ and ~/ on POSIX and Windows, plus ~\ on Windows.
+ * Normalizes surrounding whitespace and quotes before expanding.
  * @param filepath The path to expand
  * @returns Expanded path
  */
 export function expandHome(filepath: string): string {
-  if (filepath.startsWith("~/") || filepath === "~") {
-    return path.join(os.homedir(), filepath.slice(1));
+  if (typeof filepath !== "string" || !filepath) {
+    return filepath;
   }
+
+  // Strip leading/trailing whitespace and matching outer quotes if present
+  let cleaned = filepath.trim();
+  if (
+    (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length >= 2) ||
+    (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length >= 2)
+  ) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Gating: on Windows, accept both / and \ as directory separators following ~
+  // On POSIX, only / is a separator because \ is a valid filename character
+  const isWin = process.platform === "win32";
+  const isHome = isWin
+    ? /^~(?=$|[\\/])/.test(cleaned)
+    : /^~(?=$|\/)/.test(cleaned);
+
+  if (isHome) {
+    return path.join(os.homedir(), cleaned.slice(1));
+  }
+
   return filepath;
 }

@@ -1,4 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
+import os from "os";
+import path from "path";
 import {
   normalizePath,
   expandHome,
@@ -234,18 +236,47 @@ describe("Path Utilities", () => {
   describe("expandHome", () => {
     it("expands ~ to home directory", () => {
       const result = expandHome("~/test");
-      expect(result).toContain("test");
-      expect(result).not.toContain("~");
+      expect(result).toBe(path.join(os.homedir(), "test"));
     });
 
     it("expands bare ~ to home directory", () => {
       const result = expandHome("~");
-      expect(result).not.toContain("~");
-      expect(result.length).toBeGreaterThan(0);
+      expect(result).toBe(os.homedir());
+    });
+
+    it("normalizes surrounding quotes and whitespace before expanding", () => {
+      expect(expandHome('"~/test"')).toBe(path.join(os.homedir(), "test"));
+      expect(expandHome("'~/test'")).toBe(path.join(os.homedir(), "test"));
+      expect(expandHome("' ~/test '")).toBe(path.join(os.homedir(), "test"));
+      expect(expandHome('" ~/test "')).toBe(path.join(os.homedir(), "test"));
+      expect(expandHome('"~"')).toBe(os.homedir());
+      expect(expandHome("' ~ '")).toBe(os.homedir());
+    });
+
+    it("preserves spaces inside paths without re-splitting", () => {
+      const withSpaces = "~/path with spaces/file.txt";
+      expect(expandHome(withSpaces)).toBe(
+        path.join(os.homedir(), "path with spaces/file.txt"),
+      );
+    });
+
+    it("leaves a literal POSIX backslash path unchanged (#5180 guardrail)", () => {
+      // On non-Windows platforms, backslash is a valid filename character, not a separator.
+      // A file named literally `~\notes` in cwd must not be expanded to home.
+      if (process.platform !== "win32") {
+        expect(expandHome("~\\notes")).toBe("~\\notes");
+      }
+    });
+
+    it("does not expand user homedir patterns (~alice)", () => {
+      expect(expandHome("~alice")).toBe("~alice");
+      expect(expandHome("~alice/notes")).toBe("~alice/notes");
     });
 
     it("leaves other paths unchanged", () => {
       expect(expandHome("C:/test")).toBe("C:/test");
+      expect(expandHome("/var/log/syslog")).toBe("/var/log/syslog");
+      expect(expandHome("")).toBe("");
     });
   });
 

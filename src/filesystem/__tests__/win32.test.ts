@@ -4,13 +4,15 @@
 // drive roots, bare drive letters, backslash conversion and UNC shares.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import os from "os";
+import path from "path";
 
 vi.mock("path", async () => {
   const actual = await vi.importActual<typeof import("path")>("path");
   return { ...actual.win32, default: actual.win32 };
 });
 
-const { normalizePath } = await import("../path-utils.js");
+const { normalizePath, expandHome } = await import("../path-utils.js");
 const { isPathWithinAllowedDirectories } =
   await import("../path-validation.js");
 
@@ -139,5 +141,39 @@ describe("isPathWithinAllowedDirectories on win32", () => {
         "\\\\server\\share\\sub",
       ]),
     ).toBe(false);
+  });
+});
+
+describe("expandHome on win32 (#5180)", () => {
+  it("expands bare ~ to home directory", () => {
+    expect(expandHome("~")).toBe(path.join(os.homedir(), ""));
+  });
+
+  it("produces identical results for forward slash and backslash separators", () => {
+    const slashResult = expandHome("~/projects/test");
+    const backslashResult = expandHome("~\\projects\\test");
+    expect(backslashResult).toBe(slashResult);
+    expect(backslashResult).toBe(path.join(os.homedir(), "projects\\test"));
+  });
+
+  it("normalizes surrounding quotes and whitespace before expanding", () => {
+    const expected = path.join(os.homedir(), "workspace");
+    expect(expandHome('"~\\workspace"')).toBe(expected);
+    expect(expandHome("'~\\workspace'")).toBe(expected);
+    expect(expandHome("' ~\\workspace '")).toBe(expected);
+    expect(expandHome('" ~\\workspace "')).toBe(expected);
+  });
+
+  it("preserves spaces inside paths without re-splitting", () => {
+    const withSpace = "~\\My Documents\\Notes.txt";
+    expect(expandHome(withSpace)).toBe(
+      path.join(os.homedir(), "My Documents\\Notes.txt"),
+    );
+  });
+
+  it("leaves non-home Windows paths unchanged", () => {
+    expect(expandHome("C:\\Windows\\System32")).toBe("C:\\Windows\\System32");
+    expect(expandHome("\\\\server\\share")).toBe("\\\\server\\share");
+    expect(expandHome("~alice\\notes")).toBe("~alice\\notes");
   });
 });
